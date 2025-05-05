@@ -1,0 +1,52 @@
+Table,Field,Definition
+Users,Id,UUID (PK)
+Users,FullName,VARCHAR(150)
+Users,Email,"VARCHAR(100), Unique"
+Users,PhoneNumber,VARCHAR(30)
+Users,Role,VARCHAR(30)
+Users,PasswordHash,TEXT
+Users,IsActive,BOOLEAN
+Users,CreatedAt,TIMESTAMP
+Technicians,Id,UUID (PK)
+Technicians,UserId,UUID (FK to Users.Id)
+Technicians,CurrentLatitude,"DECIMAL(9,6)"
+Technicians,CurrentLongitude,"DECIMAL(9,6)"
+Technicians,IsAvailable,BOOLEAN
+Customers,Id,UUID (PK)
+Customers,FullName,VARCHAR(150)
+Customers,PhoneNumber,VARCHAR(30)
+Customers,Email,VARCHAR(100)
+Customers,Address,TEXT
+Customers,Latitude,"DECIMAL(9,6)"
+Customers,Longitude,"DECIMAL(9,6)"
+Jobs,Id,UUID (PK)
+Jobs,CustomerId,UUID (FK to Customers.Id)
+Jobs,TechnicianId,UUID (FK to Technicians.Id)
+Jobs,Title,VARCHAR(200)
+Jobs,Description,TEXT
+Jobs,Status,VARCHAR(30)
+Jobs,ScheduledAt,TIMESTAMP
+Jobs,StartedAt,TIMESTAMP
+Jobs,CompletedAt,TIMESTAMP
+Jobs,CreatedAt,TIMESTAMP
+Materials,Id,UUID (PK)
+Materials,Name,VARCHAR(100)
+Materials,UnitPrice,"DECIMAL(10,2)"
+Materials,StockQuantity,INT
+JobMaterials,Id,UUID (PK)
+JobMaterials,JobId,UUID (FK to Jobs.Id)
+JobMaterials,MaterialId,UUID (FK to Materials.Id)
+JobMaterials,QuantityUsed,INT
+Invoices,Id,UUID (PK)
+Invoices,JobId,UUID (FK to Jobs.Id)
+Invoices,Amount,"DECIMAL(10,2)"
+Invoices,IsPaid,BOOLEAN
+Invoices,CreatedAt,TIMESTAMP
+JobNotes,Id,UUID (PK)
+JobNotes,JobId,UUID (FK to Jobs.Id)
+JobNotes,Note,TEXT
+JobNotes,CreatedAt,TIMESTAMP
+JobPhotos,Id,UUID (PK)
+JobPhotos,JobId,UUID (FK to Jobs.Id)
+JobPhotos,PhotoUrl,TEXT
+JobPhotos,UploadedAt,TIMESTAMP
