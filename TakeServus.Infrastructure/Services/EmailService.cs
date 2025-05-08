@@ -15,17 +15,22 @@ public class EmailService : IEmailService
 
   public async Task SendEmailAsync(string to, string subject, string body)
   {
+    var message = new MailMessage
+    {
+      From = new MailAddress(_settings.FromEmail, _settings.FromName),
+      Subject = subject,
+      Body = body,
+      IsBodyHtml = true
+    };
+
+    message.To.Add(to);
+
     using var client = new SmtpClient(_settings.Host, _settings.Port)
     {
       Credentials = new NetworkCredential(_settings.Username, _settings.Password),
       EnableSsl = _settings.EnableSsl
     };
 
-    var mail = new MailMessage(_settings.From, to, subject, body)
-    {
-      IsBodyHtml = false
-    };
-
-    await client.SendMailAsync(mail);
+    await client.SendMailAsync(message);
   }
 }

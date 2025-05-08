@@ -1,46 +1,45 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using System.Text;
+using TakeServus.Api.Swagger;
+using TakeServus.Application.Settings;
 using TakeServus.Persistence.DbContexts;
 using TakeServus.Persistence.Seed;
-using TakeServus.Api.Swagger;
-using HealthChecks.NpgSql;
-using Microsoft.OpenApi.Models;
-using Microsoft.AspNetCore.Mvc;
-using TakeServus.Application.Settings;
-using TakeServus.Application.Interfaces;
-using TakeServus.Api.Middleware;
-using TakeServus.Infrastructure.Background;
+using TakeServus.Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Get Smtp settings from configuration and validate
-builder.Services.AddOptions<SmtpSettings>()
-    .Bind(builder.Configuration.GetSection("SmtpSettings"))
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
-builder.Services.AddScoped<IEmailService, EmailService>();
+// Load configuration
+var configuration = builder.Configuration;
 
-// Get PostgreSQL connection string from configuration
+// ----------------------------
+// Configure Settings
+// ----------------------------
+builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
+builder.Services.Configure<FirebaseSettings>(configuration.GetSection("Firebase"));
+builder.Services.Configure<FileStorageSettings>(configuration.GetSection("FileStorage"));
+builder.Services.Configure<SmtpSettings>(configuration.GetSection("SmtpSettings"));
+// ----------------------------
+// DbContext: PostgreSQL
+// ----------------------------
 builder.Services.AddDbContext<TakeServusDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
-// Add health checks for PostgreSQL
+// ----------------------------
+// HealthChecks
+// ----------------------------
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!);
+    .AddNpgSql(configuration.GetConnectionString("DefaultConnection")!);
 
-// Get JWT settings from configuration and validate
-builder.Services.AddOptions<JwtSettings>()
-    .Bind(builder.Configuration.GetSection("JwtSettings"))
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+// ----------------------------
+// Authentication: JWT
+// ----------------------------
+var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
 
-var jwtSettingsSection = builder.Configuration.GetSection("JwtSettings");
-builder.Services.Configure<JwtSettings>(jwtSettingsSection);
-var jwtSettings = jwtSettingsSection.Get<JwtSettings>();
-
-// Add Authentication
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -60,19 +59,30 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddHostedService<QueuedEmailWorker>();
+// ----------------------------
+// Hybrid Storage: Firebase or Local
+// ----------------------------
+builder.Services.UseFileStorage(configuration);
 
-// Add services to the container
-builder.Services.AddAuthorization();
+// ----------------------------
+// Controllers, Swagger
+// ----------------------------
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(options =>
 {
     options.SupportNonNullableReferenceTypes();
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "TakeServus API", Version = "v1", Description = "TakeServus API Documentation" });
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "TakeServus API",
+        Version = "v1",
+        Description = "TakeServus Service Management API"
+    });
+
     options.CustomSchemaIds(type => type.FullName);
 
+    // JWT Authorization support
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -80,7 +90,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter 'Bearer' followed by a space and your JWT token.\n\nExample: Bearer eyJhbGciOiJIUzI1NiIsIn..."
+        Description = "Enter 'Bearer' followed by your token"
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -98,9 +108,13 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 
+    // File upload support
     options.OperationFilter<SwaggerFileUploadFilter>();
 });
 
+// ----------------------------
+// Model Validation Response
+// ----------------------------
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -115,47 +129,39 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
         return new BadRequestObjectResult(new
         {
-            message = "Validation failed",
-            problemDetails
+            Message = "Validation failed",
+            Details = problemDetails
         });
     };
 });
 
 var app = builder.Build();
 
-// Dataseeding (optional)
+// ----------------------------
+// Database Seeding
+// ----------------------------
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<TakeServusDbContext>();
     DataSeeder.SeedInitialData(context);
 }
 
-// Middleware and infrastructure
-app.UseMiddleware<RequestLoggingMiddleware>();
-
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
-
+// ----------------------------
+// Middleware Pipeline
+// ----------------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
     app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "TakeServus API V1");
-        options.RoutePrefix = string.Empty;
-    });
+    app.UseSwaggerUI();
 }
 
-app.UseStaticFiles();
-app.UseHttpsRedirection();
-app.UseRouting();
+app.UseStaticFiles(); // for wwwroot/photos or uploads
 
+app.UseRouting();
+app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 app.MapHealthChecks("/health");
 

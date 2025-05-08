@@ -15,11 +15,16 @@ public class JobController : ControllerBase
 {
     private readonly TakeServusDbContext _context;
     private readonly IQueuedEmailService _queuedEmailService;
+    private readonly IFileStorageService _fileStorageService;
 
-    public JobController(TakeServusDbContext context, IQueuedEmailService queuedEmailService)
+    public JobController(
+        TakeServusDbContext context,
+        IQueuedEmailService queuedEmailService,
+        IFileStorageService fileStorageService)
     {
         _context = context;
         _queuedEmailService = queuedEmailService;
+        _fileStorageService = fileStorageService;
     }
 
     [HttpPost]
@@ -284,7 +289,7 @@ public class JobController : ControllerBase
     [Authorize]
     [RequestSizeLimit(100 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
-    public async Task<IActionResult> UploadPhoto([FromRoute] Guid jobId, IFormFile file) // <-- Removed [FromForm] here
+    public async Task<IActionResult> UploadPhoto([FromRoute] Guid jobId, IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest("File is empty");
@@ -292,14 +297,15 @@ public class JobController : ControllerBase
         var job = await _context.Jobs.FindAsync(jobId);
         if (job == null) return NotFound("Job not found");
 
+        var photoUrl = await _fileStorageService.UploadFileAsync(file, "job-photos");
+
         var photo = new JobPhoto
         {
             Id = Guid.NewGuid(),
             JobId = jobId,
-            PhotoUrl = await SavePhotoToServer(file),
+            PhotoUrl = photoUrl,
             UploadedAt = DateTime.UtcNow
         };
-
 
         _context.JobPhotos.Add(photo);
 
