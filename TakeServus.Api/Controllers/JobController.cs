@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TakeServus.Application.DTOs.Common;
 using TakeServus.Application.DTOs.Jobs;
 using TakeServus.Application.Interfaces;
 using TakeServus.Domain.Entities;
 using TakeServus.Persistence.DbContexts;
+using System.Linq.Dynamic.Core;
 
 namespace TakeServus.Api.Controllers;
 
@@ -172,7 +174,12 @@ public class JobController : ControllerBase
 
     [HttpGet("my")]
     [Authorize(Roles = "Technician")]
-    public async Task<ActionResult<IEnumerable<JobResponse>>> GetMyJobs([FromQuery] string? status, [FromQuery] DateOnly? date)
+    public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<JobResponse>>> GetMyJobs(
+        [FromQuery] string? status,
+        [FromQuery] DateOnly? date,
+        [FromQuery] string? keyword,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
@@ -198,20 +205,40 @@ public class JobController : ControllerBase
             query = query.Where(j => j.ScheduledAt >= start && j.ScheduledAt <= end);
         }
 
-        var jobs = await query.Select(j => new JobResponse
+        if (!string.IsNullOrWhiteSpace(keyword))
         {
-            Id = j.Id,
-            Title = j.Title,
-            Description = j.Description,
-            Status = j.Status,
-            ScheduledAt = j.ScheduledAt,
-            StartedAt = j.StartedAt,
-            CompletedAt = j.CompletedAt,
-            TechnicianName = j.Technician.User.FullName,
-            CustomerName = j.Customer.FullName
-        }).ToListAsync();
+            query = query.Where(j =>
+                j.Title.Contains(keyword) ||
+                j.Description != null && j.Description.Contains(keyword) ||
+                j.Customer.FullName.Contains(keyword));
+        }
 
-        return Ok(jobs);
+        var totalCount = await query.CountAsync();
+
+        var jobs = await query
+            .OrderByDescending(j => j.ScheduledAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(j => new JobResponse
+            {
+                Id = j.Id,
+                Title = j.Title,
+                Description = j.Description,
+                Status = j.Status,
+                ScheduledAt = j.ScheduledAt,
+                StartedAt = j.StartedAt,
+                CompletedAt = j.CompletedAt,
+                TechnicianName = j.Technician.User.FullName,
+                CustomerName = j.Customer.FullName
+            }).ToListAsync();
+
+        return Ok(new TakeServus.Application.DTOs.Common.PagedResult<JobResponse>
+        {
+            Items = jobs,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 
     [HttpPost("note")]
@@ -244,7 +271,7 @@ public class JobController : ControllerBase
 
     [HttpPost("material")]
     [Authorize(Roles = "Technician")]
-    public async Task<IActionResult> AddMaterial(AssignMaterialRequest request)
+    public async Task<IActionResult> AddMaterial(JobAssignMaterialRequest request)
     {
         var job = await _context.Jobs.FindAsync(request.JobId);
         var material = await _context.Materials.FindAsync(request.MaterialId);
@@ -356,5 +383,70 @@ public class JobController : ControllerBase
             }).ToListAsync();
 
         return Ok(activities);
+    }
+
+    [HttpGet("admin")]
+    [Authorize(Roles = "Owner,Dispatcher")]
+    public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<JobResponse>>> GetAllJobs(
+       [FromQuery] string? status,
+       [FromQuery] string? technicianName,
+       [FromQuery] string? customerName,
+       [FromQuery] DateOnly? date,
+       [FromQuery] string? sortBy,
+       [FromQuery] bool desc = true,
+       [FromQuery] int page = 1,
+       [FromQuery] int pageSize = 10)
+    {
+        var query = _context.Jobs
+            .Include(j => j.Customer)
+            .Include(j => j.Technician)
+            .ThenInclude(t => t.User)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(j => j.Status == status);
+
+        if (!string.IsNullOrWhiteSpace(technicianName))
+            query = query.Where(j => j.Technician.User.FullName.Contains(technicianName));
+
+        if (!string.IsNullOrWhiteSpace(customerName))
+            query = query.Where(j => j.Customer.FullName.Contains(customerName));
+
+        if (date.HasValue)
+        {
+            var start = date.Value.ToDateTime(TimeOnly.MinValue);
+            var end = date.Value.ToDateTime(TimeOnly.MaxValue);
+            query = query.Where(j => j.ScheduledAt >= start && j.ScheduledAt <= end);
+        }
+
+        var totalCount = await query.CountAsync();
+
+        string sortProperty = !string.IsNullOrWhiteSpace(sortBy) ? sortBy : "ScheduledAt";
+        string sortOrder = desc ? "descending" : "ascending";
+
+        var jobs = await query
+            .OrderBy($"{sortProperty} {sortOrder}")
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(j => new JobResponse
+            {
+                Id = j.Id,
+                Title = j.Title,
+                Description = j.Description,
+                Status = j.Status,
+                ScheduledAt = j.ScheduledAt,
+                StartedAt = j.StartedAt,
+                CompletedAt = j.CompletedAt,
+                TechnicianName = j.Technician.User.FullName,
+                CustomerName = j.Customer.FullName
+            }).ToListAsync();
+
+        return Ok(new TakeServus.Application.DTOs.Common.PagedResult<JobResponse>
+        {
+            Items = jobs,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 }

@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TakeServus.Application.DTOs.Auth;
+using TakeServus.Application.DTOs.Common;
 using TakeServus.Application.DTOs.Users;
 using TakeServus.Domain.Entities;
 using TakeServus.Persistence.DbContexts;
+using System.Linq.Dynamic.Core;
 
 namespace TakeServus.Api.Controllers;
 
@@ -43,21 +46,54 @@ public class UsersController : ControllerBase
         return Ok(user.Id);
     }
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<UserResponse>>> GetUsers()
+    [HttpGet("list")]
+    public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<UserResponse>>> GetUsers(
+        [FromQuery] string? role,
+        [FromQuery] string? keyword,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool desc = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var users = await _context.Users
+        var query = _context.Users.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            query = query.Where(u => u.Role == role);
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            query = query.Where(u =>
+                u.FullName.Contains(keyword) ||
+                u.Email.Contains(keyword));
+        }
+
+        var totalCount = await query.CountAsync();
+
+        string sortProperty = !string.IsNullOrWhiteSpace(sortBy) ? sortBy : "FullName";
+        string sortOrder = desc ? "descending" : "ascending";
+
+        var users = await query
+            .OrderBy($"{sortProperty} {sortOrder}")
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(u => new UserResponse
             {
                 Id = u.Id,
                 FullName = u.FullName,
                 Email = u.Email,
-                PhoneNumber = u.PhoneNumber ?? string.Empty,
                 Role = u.Role,
                 IsActive = u.IsActive
             }).ToListAsync();
 
-        return Ok(users);
+        return Ok(new TakeServus.Application.DTOs.Common.PagedResult<UserResponse>
+        {
+            Items = users,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 
     [HttpPut]
@@ -86,7 +122,7 @@ public class UsersController : ControllerBase
         var user = await _context.Users.FindAsync(Guid.Parse(userId));
         if (user == null) return NotFound();
 
-        if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.PasswordHash))
+        if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
             return BadRequest("Old password is incorrect.");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);

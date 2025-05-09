@@ -7,7 +7,7 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 [Authorize(Roles = "Owner,Dispatcher")]
 public class DashboardController : ControllerBase
 {
@@ -18,8 +18,8 @@ public class DashboardController : ControllerBase
         _context = context;
     }
 
-    [HttpGet("summary")]
-    public async Task<ActionResult<DashboardSummaryResponse>> GetSummary()
+    [HttpGet("dashboard-summary")]
+    public async Task<ActionResult<DashboardSummaryResponse>> GetDashboardSummary()
     {
         var jobs = _context.Jobs.AsQueryable();
         var users = _context.Users.AsQueryable();
@@ -40,7 +40,7 @@ public class DashboardController : ControllerBase
 
             LowStockMaterials = await materials
                 .Where(m => m.StockQuantity < 10)
-                .Select(m => new LowStockMaterialDto
+                .Select(m => new LowStockMaterialResponse
                 {
                     Name = m.Name,
                     StockQuantity = m.StockQuantity
@@ -74,7 +74,9 @@ public class DashboardController : ControllerBase
                 Year = g.Key.Year,
                 Month = g.Key.Month,
                 TotalRevenue = g.Sum(i => i.Amount)
-            }).OrderByDescending(r => r.Year).ThenByDescending(r => r.Month)
+            })
+            .OrderByDescending(r => r.Year)
+            .ThenByDescending(r => r.Month)
             .ToListAsync();
 
         return Ok(result);
@@ -89,7 +91,7 @@ public class DashboardController : ControllerBase
             .Select(g => new
             {
                 TechnicianId = g.Key,
-                TechnicianName = g.First().Technician.User.FullName,
+                TechnicianName = g.Select(j => j.Technician.User.FullName).FirstOrDefault() ?? "Unknown",
                 JobsCompleted = g.Count()
             }).ToListAsync();
 
@@ -97,23 +99,27 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("job-trends")]
-    public async Task<IActionResult> GetJobTrends([FromQuery] int days = 7)
+    public async Task<ActionResult<IEnumerable<JobTrendResponse>>> GetJobTrends()
     {
-        var fromDate = DateTime.UtcNow.Date.AddDays(-days);
+        var today = DateTime.Today;
+        var startDate = today.AddDays(-6);
 
-        var trendData = await _context.Jobs
-            .Where(j => j.CreatedAt >= fromDate)
-            .GroupBy(j => j.CreatedAt.Date)
-            .Select(g => new JobTrendDto
-            {
-                Date = g.Key,
-                Scheduled = g.Count(j => j.Status == "Scheduled"),
-                Started = g.Count(j => j.Status == "Started"),
-                Completed = g.Count(j => j.Status == "Completed")
-            })
-            .OrderBy(t => t.Date)
+        var trendsQuery = await _context.Jobs
+            .Where(j => j.ScheduledAt.HasValue &&
+                        j.ScheduledAt.Value.Date >= startDate &&
+                        j.ScheduledAt.Value.Date <= today)
             .ToListAsync();
 
-        return Ok(trendData);
+        var trends = Enumerable.Range(0, 7)
+            .Select(i => startDate.AddDays(i))
+            .Select(date => new JobTrendResponse
+            {
+                Date = date,
+                Scheduled = trendsQuery.Count(j => j.ScheduledAt?.Date == date),
+                Started = trendsQuery.Count(j => j.StartedAt?.Date == date),
+                Completed = trendsQuery.Count(j => j.CompletedAt?.Date == date)
+            }).ToList();
+
+        return Ok(trends);
     }
 }

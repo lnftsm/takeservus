@@ -1,6 +1,6 @@
 namespace TakeServus.Application.DTOs.Jobs;
 
-public class AssignMaterialRequest
+public class JobAssignMaterialRequest
 {
     public Guid JobId { get; set; }
     public Guid MaterialId { get; set; }

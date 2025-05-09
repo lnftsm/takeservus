@@ -1,4 +1,4 @@
-namespace TakeServus.Application.DTOs.Jobs;
+namespace TakeServus.Application.DTOs.Feedback;
 
 public class CreateJobFeedbackRequest
 {
