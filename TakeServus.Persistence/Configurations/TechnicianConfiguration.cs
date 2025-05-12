@@ -10,9 +10,10 @@ public class TechnicianConfiguration : IEntityTypeConfiguration<Technician>
     public void Configure(EntityTypeBuilder<Technician> builder)
     {
         builder.HasKey(t => t.Id);
+        builder.Property(t => t.UserId).IsRequired();
         builder.Property(t => t.CurrentLatitude).HasPrecision(9, 6);
         builder.Property(t => t.CurrentLongitude).HasPrecision(9, 6);
         builder.Property(t => t.IsAvailable).HasDefaultValue(true);
-        builder.HasOne(t => t.User).WithOne(u => u.Technician).HasForeignKey<Technician>(t => t.UserId);
+        builder.HasOne(t => t.User).WithOne(u => u.Technician).HasForeignKey<Technician>(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

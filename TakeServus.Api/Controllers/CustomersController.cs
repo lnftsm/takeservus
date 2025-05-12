@@ -1,5 +1,3 @@
-// File: TakeServus.Api/Controllers/CustomerController.cs
-
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TakeServus.Persistence.DbContexts;
@@ -11,9 +12,11 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Persistence.Migrations
 {
     [DbContext(typeof(TakeServusDbContext))]
-    partial class TakeServusDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250512084549_ReeditTechnician")]
+    partial class ReeditTechnician
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -102,11 +105,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
 
                     b.Property<DateTime>("ScheduledAt")
                         .HasColumnType("timestamp with time zone");

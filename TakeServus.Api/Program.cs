@@ -10,6 +10,7 @@ using TakeServus.Application.Settings;
 using TakeServus.Persistence.DbContexts;
 using TakeServus.Persistence.Seed;
 using TakeServus.Infrastructure.Extensions;
+using TakeServus.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,13 @@ builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"))
 builder.Services.Configure<FirebaseSettings>(configuration.GetSection("Firebase"));
 builder.Services.Configure<FileStorageSettings>(configuration.GetSection("FileStorage"));
 builder.Services.Configure<SmtpSettings>(configuration.GetSection("SmtpSettings"));
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(5050); // <== Enables access via 192.168.X.X
+});
+
+builder.Services.AddScoped<FirebaseStorageService, FirebaseStorageService>();
 // ----------------------------
 // DbContext: PostgreSQL
 // ----------------------------

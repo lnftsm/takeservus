@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TakeServus.Persistence.DbContexts;
@@ -11,9 +12,11 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Persistence.Migrations
 {
     [DbContext(typeof(TakeServusDbContext))]
-    partial class TakeServusDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250512110351_ReeditJob")]
+    partial class ReeditJob
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

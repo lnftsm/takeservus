@@ -12,6 +12,7 @@ public class Job
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    public bool IsDeleted { get; set; } = false;
 
     public Customer Customer { get; set; } = default!;
     public Technician Technician { get; set; } = default!;

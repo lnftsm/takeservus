@@ -15,9 +15,10 @@ public class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(j => j.Description).HasMaxLength(1000);
         builder.Property(j => j.ScheduledAt).IsRequired();
         builder.Property(j => j.CreatedAt).IsRequired();
+        builder.Property(j => j.IsDeleted).HasDefaultValue(false);
         builder.HasOne(j => j.Customer).WithMany(c => c.Jobs).HasForeignKey(j => j.CustomerId);
         builder.HasOne(j => j.Technician).WithMany(t => t.Jobs).HasForeignKey(j => j.TechnicianId);
         builder.HasMany(j => j.Activities).WithOne(a => a.Job).HasForeignKey(a => a.JobId);
-        
+
     }
 }

@@ -43,17 +43,38 @@ public class UsersController : ControllerBase
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
+        await RegisterTechnicianAsync(request, user);
         return Ok(user.Id);
+    }
+
+    private async Task RegisterTechnicianAsync(CreateUserRequest request, User user)
+    {
+        if (request.Role == "Technician")
+        {
+            bool alreadyExists = await _context.Technicians.AnyAsync(t => t.UserId == user.Id);
+            if (alreadyExists) return;
+
+            var technician = new Technician
+            {
+                UserId = user.Id,
+                CurrentLatitude = 0,
+                CurrentLongitude = 0,
+                IsAvailable = false
+            };
+
+            _context.Technicians.Add(technician);
+            await _context.SaveChangesAsync();
+        }
     }
 
     [HttpGet("list")]
     public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<UserResponse>>> GetUsers(
-        [FromQuery] string? role,
-        [FromQuery] string? keyword,
-        [FromQuery] string? sortBy,
-        [FromQuery] bool desc = true,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+          [FromQuery] string? role,
+          [FromQuery] string? keyword,
+          [FromQuery] string? sortBy,
+          [FromQuery] bool desc = true,
+          [FromQuery] int page = 1,
+          [FromQuery] int pageSize = 10)
     {
         var query = _context.Users.AsQueryable();
 
