@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TakeServus.Application.DTOs.Common;
 using TakeServus.Application.DTOs.Customers;
 using TakeServus.Domain.Entities;
@@ -9,7 +10,7 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Api.Controllers;
 
 [ApiController]
-[Route("api/v1/[controller]")]
+[Route("api/[controller]")]
 [Authorize]
 public class CustomerController : ControllerBase
 {
@@ -26,19 +27,21 @@ public class CustomerController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10)
     {
-        var search = _context.Customers.AsQueryable();
+        var customers = _context.Customers
+            .Where(c => !c.IsDeleted)
+            .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(query))
         {
-            search = search.Where(c =>
+            customers = customers.Where(c =>
                 c.FullName.Contains(query) ||
-                c.Email != null && c.Email.Contains(query) ||
-                c.PhoneNumber != null && c.PhoneNumber.Contains(query));
+                (c.Email != null && c.Email.Contains(query)) ||
+                (c.PhoneNumber != null && c.PhoneNumber.Contains(query)));
         }
 
-        var totalCount = await search.CountAsync();
+        var totalCount = await customers.CountAsync();
 
-        var results = await search
+        var items = await customers
             .OrderBy(c => c.FullName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -52,7 +55,7 @@ public class CustomerController : ControllerBase
 
         return Ok(new PagedResult<CustomerResponse>
         {
-            Items = results,
+            Items = items,
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
@@ -62,8 +65,12 @@ public class CustomerController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<CustomerResponse>> GetCustomerById(Guid id)
     {
-        var customer = await _context.Customers.FindAsync(id);
-        if (customer == null) return NotFound();
+        var customer = await _context.Customers
+            .Where(c => !c.IsDeleted && c.Id == id)
+            .FirstOrDefaultAsync();
+
+        if (customer == null)
+            return NotFound();
 
         return Ok(new CustomerResponse
         {
@@ -78,12 +85,17 @@ public class CustomerController : ControllerBase
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> CreateCustomer([FromBody] CreateCustomerRequest request)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         var customer = new Customer
         {
-            Id = Guid.NewGuid(),
             FullName = request.FullName,
             Email = request.Email,
-            PhoneNumber = request.PhoneNumber
+            PhoneNumber = request.PhoneNumber,
+            Address = request.Address,
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            CreatedByUserId = Guid.Parse(userId!)
         };
 
         _context.Customers.Add(customer);
@@ -96,12 +108,23 @@ public class CustomerController : ControllerBase
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> UpdateCustomer(Guid id, [FromBody] UpdateCustomerRequest request)
     {
-        var customer = await _context.Customers.FindAsync(id);
-        if (customer == null) return NotFound();
+        var customer = await _context.Customers
+            .Where(c => !c.IsDeleted && c.Id == id)
+            .FirstOrDefaultAsync();
+
+        if (customer == null)
+            return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
         customer.FullName = request.FullName;
         customer.Email = request.Email;
         customer.PhoneNumber = request.PhoneNumber;
+        customer.Address = request.Address;
+        customer.Latitude = request.Latitude;
+        customer.Longitude = request.Longitude;
+        customer.ModifiedByUserId = Guid.Parse(userId!);
+        customer.ModifiedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
         return NoContent();
@@ -109,14 +132,33 @@ public class CustomerController : ControllerBase
 
     [HttpDelete("{id}")]
     [Authorize(Roles = "Owner,Dispatcher")]
-    public async Task<IActionResult> DeleteCustomer(Guid id)
+    public async Task<IActionResult> ArchiveCustomer(Guid id)
     {
         var customer = await _context.Customers.FindAsync(id);
-        if (customer == null) return NotFound();
+        if (customer == null || customer.IsDeleted)
+            return NotFound();
 
-        _context.Customers.Remove(customer);
+        customer.IsDeleted = true;
+        customer.ModifiedByUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        customer.ModifiedAt = DateTime.UtcNow;
+
         await _context.SaveChangesAsync();
-
         return NoContent();
+    }
+
+    [HttpPost("{id}/restore")]
+    [Authorize(Roles = "Owner,Dispatcher")]
+    public async Task<IActionResult> RestoreCustomer(Guid id)
+    {
+        var customer = await _context.Customers.FindAsync(id);
+        if (customer == null)
+            return NotFound();
+
+        customer.IsDeleted = false;
+        customer.ModifiedByUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        customer.ModifiedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return Ok();
     }
 }

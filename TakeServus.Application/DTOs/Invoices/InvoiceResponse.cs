@@ -1,5 +1,3 @@
-using System;
-
 namespace TakeServus.Application.DTOs.Invoices;
 
 public class InvoiceResponse

@@ -6,8 +6,10 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using TakeServus.Application.DTOs.Auth;
-using TakeServus.Application.Settings;
+using TakeServus.Shared.Settings;
 using TakeServus.Persistence.DbContexts;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 
 namespace TakeServus.Api.Controllers;
 
@@ -25,9 +27,10 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public IActionResult Login(LoginRequest request)
+    [AllowAnonymous]
+    public async Task<IActionResult> Login(LoginRequest request)
     {
-        var user = _context.Users.FirstOrDefault(u => u.Email == request.Email && u.IsActive);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
@@ -77,5 +80,26 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok("Password changed successfully.");
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetCurrentUser()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+
+        var user = await _context.Users.FindAsync(Guid.Parse(userId));
+        if (user == null) return NotFound();
+
+        return Ok(new
+        {
+            user.Id,
+            user.FullName,
+            user.Email,
+            user.PhoneNumber,
+            user.Role,
+            user.IsActive
+        });
     }
 }

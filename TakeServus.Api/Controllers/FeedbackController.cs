@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TakeServus.Application.DTOs.Common;
-using TakeServus.Application.DTOs.Feedback;
+using TakeServus.Application.DTOs.Jobs.Feedback;
 using TakeServus.Domain.Entities;
 using TakeServus.Persistence.DbContexts;
 
@@ -11,6 +11,7 @@ namespace TakeServus.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class FeedbackController : ControllerBase
 {
   private readonly TakeServusDbContext _context;
@@ -27,17 +28,17 @@ public class FeedbackController : ControllerBase
     var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userId == null) return Unauthorized();
 
-    var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == Guid.Parse(userId));
-    if (customer == null) return NotFound("Customer not found");
+    var customer = await _context.Customers.FindAsync(Guid.Parse(userId));
+    if (customer == null) return NotFound("Customer not found.");
 
     var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == request.JobId);
     if (job == null || job.CustomerId != customer.Id)
-      return BadRequest("Invalid job for this customer");
+      return BadRequest("Invalid job for this customer.");
 
-    var exists = await _context.JobFeedbacks.AnyAsync(f =>
+    var alreadySubmitted = await _context.JobFeedbacks.AnyAsync(f =>
         f.JobId == request.JobId && f.CustomerId == customer.Id);
-    if (exists)
-      return BadRequest("Feedback already submitted for this job");
+    if (alreadySubmitted)
+      return BadRequest("Feedback already submitted for this job.");
 
     var feedback = new JobFeedback
     {
@@ -53,30 +54,31 @@ public class FeedbackController : ControllerBase
     _context.JobFeedbacks.Add(feedback);
     await _context.SaveChangesAsync();
 
-    return Ok("Feedback submitted successfully");
+    return Ok("Feedback submitted successfully.");
   }
 
   [HttpGet("{jobId}")]
   [Authorize(Roles = "Customer")]
-  public async Task<IActionResult> GetMyFeedback(Guid jobId)
+  public async Task<ActionResult<JobFeedbackResponse>> GetMyFeedback(Guid jobId)
   {
     var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userId == null) return Unauthorized();
 
-    var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == Guid.Parse(userId));
-    if (customer == null) return NotFound("Customer not found");
+    var customer = await _context.Customers.FindAsync(Guid.Parse(userId));
+    if (customer == null) return NotFound("Customer not found.");
 
     var feedback = await _context.JobFeedbacks
         .FirstOrDefaultAsync(f => f.JobId == jobId && f.CustomerId == customer.Id);
 
-    if (feedback == null) return NotFound("Feedback not found for this job");
+    if (feedback == null) return NotFound("Feedback not found.");
 
     return Ok(new JobFeedbackResponse
     {
-      JobId = feedback.JobId,
+      Id = feedback.Id,
       Rating = feedback.Rating ?? 0,
       Comment = feedback.Comment,
-      SubmittedAt = feedback.SubmittedAt
+      SubmittedAt = feedback.SubmittedAt,
+      IsSatisfied = feedback.IsSatisfied
     });
   }
 
@@ -89,14 +91,15 @@ public class FeedbackController : ControllerBase
         .ThenInclude(j => j.Customer)
         .FirstOrDefaultAsync(f => f.JobId == jobId);
 
-    if (feedback == null) return NotFound();
+    if (feedback == null) return NotFound("Feedback not found.");
 
     return Ok(new JobFeedbackResponse
     {
-      JobId = feedback.JobId,
+      Id = feedback.Id,
       Rating = feedback.Rating ?? 0,
       Comment = feedback.Comment,
-      SubmittedAt = feedback.SubmittedAt
+      SubmittedAt = feedback.SubmittedAt,
+      IsSatisfied = feedback.IsSatisfied
     });
   }
 
@@ -132,10 +135,11 @@ public class FeedbackController : ControllerBase
         .Take(pageSize)
         .Select(f => new JobFeedbackResponse
         {
-          JobId = f.JobId,
+          Id = f.Id,
           Rating = f.Rating ?? 0,
           Comment = f.Comment,
-          SubmittedAt = f.SubmittedAt
+          SubmittedAt = f.SubmittedAt,
+          IsSatisfied = f.IsSatisfied
         }).ToListAsync();
 
     return Ok(new PagedResult<JobFeedbackResponse>

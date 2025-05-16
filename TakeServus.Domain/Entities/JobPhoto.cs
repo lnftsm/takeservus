@@ -1,7 +1,9 @@
+using TakeServus.Domain.Common;
+
 namespace TakeServus.Domain.Entities;
-public class JobPhoto
+
+public class JobPhoto : BaseEntityWithAudit
 {
-    public Guid Id { get; set; }
     public Guid JobId { get; set; }
     public string PhotoUrl { get; set; } = default!;
     public DateTime UploadedAt { get; set; }

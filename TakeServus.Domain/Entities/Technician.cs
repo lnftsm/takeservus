@@ -1,8 +1,9 @@
+using TakeServus.Domain.Common;
+
 namespace TakeServus.Domain.Entities;
 
-public class Technician
+public class Technician : BaseEntityWithAudit
 {
-    public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public decimal? CurrentLatitude { get; set; }
     public decimal? CurrentLongitude { get; set; }

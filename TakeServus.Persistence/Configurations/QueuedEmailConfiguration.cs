@@ -10,24 +10,10 @@ public class QueuedEmailConfiguration : IEntityTypeConfiguration<QueuedEmail>
   {
     builder.HasKey(e => e.Id);
 
-    builder.Property(e => e.To)
-        .IsRequired()
-        .HasMaxLength(255);
-
-    builder.Property(e => e.Subject)
-        .IsRequired()
-        .HasMaxLength(255);
-
-    builder.Property(e => e.Body)
-        .IsRequired();
-
-    builder.Property(e => e.CreatedAt)
-        .IsRequired();
-
-    builder.Property(e => e.IsSent)
-        .IsRequired();
-
-    builder.Property(e => e.RetryCount)
-        .HasDefaultValue(0);
+    builder.Property(e => e.To).IsRequired().HasMaxLength(255);
+    builder.Property(e => e.Subject).IsRequired().HasMaxLength(255);
+    builder.Property(e => e.Body).IsRequired();
+    
+    builder.Property(e => e.RetryCount).HasDefaultValue(1);
   }
 }

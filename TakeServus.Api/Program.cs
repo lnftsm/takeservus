@@ -6,48 +6,55 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using TakeServus.Api.Swagger;
-using TakeServus.Application.Settings;
+using TakeServus.Infrastructure.Extensions;
 using TakeServus.Persistence.DbContexts;
 using TakeServus.Persistence.Seed;
-using TakeServus.Infrastructure.Extensions;
-using TakeServus.Infrastructure.Services;
+using TakeServus.Shared.Settings;
+using TakeServus.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load configuration
+// ----------------------------
+// Configuration
+// ----------------------------
 var configuration = builder.Configuration;
+var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
 
 // ----------------------------
-// Configure Settings
+// Register Settings
 // ----------------------------
 builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
-builder.Services.Configure<FirebaseSettings>(configuration.GetSection("Firebase"));
-builder.Services.Configure<FileStorageSettings>(configuration.GetSection("FileStorage"));
+builder.Services.Configure<FirebaseSettings>(configuration.GetSection("FirebaseSettings"));
+builder.Services.Configure<FileStorageSettings>(configuration.GetSection("FileStorageSettings"));
 builder.Services.Configure<SmtpSettings>(configuration.GetSection("SmtpSettings"));
 
+// ----------------------------
+// Kestrel Port Binding
+// ----------------------------
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(5050); // <== Enables access via 192.168.X.X
+    options.ListenAnyIP(5050); // Enable 192.168.X.X access
 });
 
-builder.Services.AddScoped<FirebaseStorageService, FirebaseStorageService>();
 // ----------------------------
-// DbContext: PostgreSQL
+// Context + Health Checks
 // ----------------------------
 builder.Services.AddDbContext<TakeServusDbContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
-// ----------------------------
-// HealthChecks
-// ----------------------------
 builder.Services.AddHealthChecks()
     .AddNpgSql(configuration.GetConnectionString("DefaultConnection")!);
 
 // ----------------------------
-// Authentication: JWT
+// Dependency Injection Setup
 // ----------------------------
-var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
+builder.Services.AddHttpContextAccessor(); // Required for audit interceptor
+builder.Services.UseFileStorage(configuration); // Firebase vs Local handled internally
+builder.Services.AddInfrastructureServices(configuration); // IEmailService, IInvoiceService, etc.
 
+// ----------------------------
+// Authentication - JWT
+// ----------------------------
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -68,19 +75,12 @@ builder.Services.AddAuthentication(options =>
 });
 
 // ----------------------------
-// Hybrid Storage: Firebase or Local
-// ----------------------------
-builder.Services.UseFileStorage(configuration);
-
-// ----------------------------
-// Controllers, Swagger
+// Swagger & API Setup
 // ----------------------------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SupportNonNullableReferenceTypes();
     options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "TakeServus API",
@@ -88,9 +88,9 @@ builder.Services.AddSwaggerGen(options =>
         Description = "TakeServus Service Management API"
     });
 
+    options.SupportNonNullableReferenceTypes();
     options.CustomSchemaIds(type => type.FullName);
 
-    // JWT Authorization support
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -98,7 +98,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter 'Bearer' followed by your token"
+        Description = "Enter 'Bearer {token}'"
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -116,29 +116,28 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 
-    // File upload support
-    options.OperationFilter<SwaggerFileUploadFilter>();
+    options.OperationFilter<SwaggerFileUploadFilter>(); // Enables IFormFile in Swagger
 });
 
 // ----------------------------
-// Model Validation Response
+// Model Validation
 // ----------------------------
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
     {
-        var problemDetails = context.ModelState
-            .Where(e => e.Value?.Errors.Count > 0)
-            .Select(e => new
+        var errors = context.ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .Select(x => new
             {
-                Field = e.Key,
-                Errors = e.Value!.Errors.Select(err => err.ErrorMessage)
+                Field = x.Key,
+                Errors = x.Value!.Errors.Select(e => e.ErrorMessage)
             });
 
         return new BadRequestObjectResult(new
         {
             Message = "Validation failed",
-            Details = problemDetails
+            Details = errors
         });
     };
 });
@@ -164,8 +163,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseStaticFiles(); // for wwwroot/photos or uploads
-
+app.UseStaticFiles();              // wwwroot/uploads support
 app.UseRouting();
 app.UseHttpsRedirection();
 app.UseAuthentication();

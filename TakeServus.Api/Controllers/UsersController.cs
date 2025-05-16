@@ -104,8 +104,7 @@ public class UsersController : ControllerBase
                 Id = u.Id,
                 FullName = u.FullName,
                 Email = u.Email,
-                Role = u.Role,
-                IsActive = u.IsActive
+                Role = u.Role
             }).ToListAsync();
 
         return Ok(new TakeServus.Application.DTOs.Common.PagedResult<UserResponse>
@@ -120,6 +119,11 @@ public class UsersController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> UpdateUser(UpdateUserRequest request)
     {
+        if (request.Id == Guid.Empty)
+            return BadRequest("User ID is required.");
+        if (_context.Users.Any(u => u.Email == request.Email && u.Id != request.Id))
+            return BadRequest("Another user with this email already exists.");
+
         var user = await _context.Users.FindAsync(request.Id);
         if (user == null) return NotFound();
 
@@ -150,5 +154,17 @@ public class UsersController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok("Password changed successfully.");
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeactivateUser(Guid id)
+    {
+        var user = await _context.Users.FindAsync(id);
+        if (user == null) return NotFound();
+
+        user.IsActive = false;
+        await _context.SaveChangesAsync();
+
+        return Ok("User deactivated.");
     }
 }

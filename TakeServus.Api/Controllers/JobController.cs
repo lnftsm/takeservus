@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using TakeServus.Application.DTOs.Common;
 using TakeServus.Application.DTOs.Jobs;
 using TakeServus.Application.Interfaces;
 using TakeServus.Domain.Entities;
 using TakeServus.Persistence.DbContexts;
 using System.Linq.Dynamic.Core;
-using TakeServus.Infrastructure.Services;
+using TakeServus.Application.DTOs.Jobs.Activities;
+using TakeServus.Application.DTOs.Customers;
 
 namespace TakeServus.Api.Controllers;
 
@@ -17,19 +17,20 @@ namespace TakeServus.Api.Controllers;
 public class JobController : ControllerBase
 {
     private readonly TakeServusDbContext _context;
+    private readonly IFirebaseStorageService _firebaseStorageService;
     //private readonly IQueuedEmailService _queuedEmailService;
-    private readonly IFileStorageService _fileStorageService;
-    private readonly FirebaseStorageService _firebaseStorageService;
+    //private readonly IFileStorageService _fileStorageService;
 
     public JobController(
         TakeServusDbContext context,
+        IFirebaseStorageService firebaseStorageService
         //IQueuedEmailService queuedEmailService,
-        IFileStorageService fileStorageService,
-        FirebaseStorageService firebaseStorageService)
+        //IFileStorageService fileStorageService,
+        )
     {
         _context = context;
         //_queuedEmailService = queuedEmailService;
-        _fileStorageService = fileStorageService;
+        //_fileStorageService = fileStorageService;
         _firebaseStorageService = firebaseStorageService;
     }
 
@@ -37,6 +38,11 @@ public class JobController : ControllerBase
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> CreateJob(CreateJobRequest request)
     {
+        if (request.ScheduledAt < DateTime.UtcNow)
+            return BadRequest("Scheduled date cannot be in the past.");
+        if (request.ScheduledAt > DateTime.UtcNow.AddDays(30))
+            return BadRequest("Scheduled date cannot be more than 30 days in the future.");
+
         var job = new Job
         {
             Id = Guid.NewGuid(),
@@ -48,10 +54,6 @@ public class JobController : ControllerBase
             Status = "Scheduled",
             CreatedAt = DateTime.UtcNow
         };
-        if (request.ScheduledAt < DateTime.UtcNow)
-            return BadRequest("Scheduled date cannot be in the past.");
-        if (request.ScheduledAt > DateTime.UtcNow.AddDays(30))
-            return BadRequest("Scheduled date cannot be more than 30 days in the future.");
 
         _context.Jobs.Add(job);
         await _context.SaveChangesAsync();
@@ -70,14 +72,10 @@ public class JobController : ControllerBase
         _context.JobActivities.Add(activity);
         await _context.SaveChangesAsync();
 
-        var technician = await _context.Technicians
-            .Include(t => t.User)
-            .FirstOrDefaultAsync(t => t.Id == job.TechnicianId);
+        var technician = await _context.Technicians.Include(t => t.User).FirstOrDefaultAsync(t => t.Id == job.TechnicianId);
 
-        if (technician != null)
+        if (technician != null && !string.IsNullOrWhiteSpace(technician.User.Email))
         {
-            if (string.IsNullOrWhiteSpace(technician.User.Email)) return BadRequest("Technician email not found.");
-
             // TODO: Send email to technician
             // Uncomment the following line to send an email
             // await _queuedEmailService.EnqueueEmailAsync(
@@ -96,31 +94,22 @@ public class JobController : ControllerBase
     {
         if (request.JobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
         if (request.NewTechnicianId == Guid.Empty) return BadRequest("New technician ID cannot be empty.");
-        if (request.JobId == request.NewTechnicianId)
-            return BadRequest("Job ID and new technician ID cannot be the same.");
 
         var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
+            .Include(j => j.Technician).ThenInclude(t => t.User)
             .FirstOrDefaultAsync(j => j.Id == request.JobId && !j.IsDeleted);
 
         if (job == null) return NotFound("Job not found.");
-        if (job.IsDeleted) return BadRequest("Job is archived.");
-        if (job.Status != "Scheduled")
-            return BadRequest("Job must be in 'Scheduled' status to reassign.");
-        if (request.NewTechnicianId == job.TechnicianId)
-            return BadRequest("Job is already assigned to the selected technician.");
+        if (job.Status != "Scheduled") return BadRequest("Job must be 'Scheduled' to reassign.");
+        if (request.NewTechnicianId == job.TechnicianId) return BadRequest("Technician is already assigned.");
 
-        var technician = await _context.Technicians
-            .Include(t => t.User)
-            .FirstOrDefaultAsync(t => t.Id == request.NewTechnicianId);
-
+        var technician = await _context.Technicians.Include(t => t.User).FirstOrDefaultAsync(t => t.Id == request.NewTechnicianId);
         if (technician == null) return NotFound("Technician not found.");
 
-        var oldTechnicianName = job.Technician.User.FullName;
-        var newTechnicianName = technician.User.FullName;
-
+        var oldTechnician = job.Technician.User.FullName;
+        var newTechnician = technician.User.FullName;
         job.TechnicianId = request.NewTechnicianId;
+
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         _context.JobActivities.Add(new JobActivity
@@ -128,12 +117,13 @@ public class JobController : ControllerBase
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ActivityType = "Reassigned",
-            Details = $"From {oldTechnicianName} to {newTechnicianName}",
+            Details = $"From {oldTechnician} to {newTechnician}",
             PerformedAt = DateTime.UtcNow,
             PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
         });
 
         await _context.SaveChangesAsync();
+
 
         if (string.IsNullOrWhiteSpace(technician.User.Email)) return BadRequest("Technician email not found.");
 
@@ -153,53 +143,24 @@ public class JobController : ControllerBase
         });
     }
 
-    [HttpPut("status")]
+    [HttpPut("{jobId}/status")]
     public async Task<IActionResult> UpdateStatus([FromBody] UpdateJobStatusRequest request)
     {
-        if (request.JobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        if (string.IsNullOrWhiteSpace(request.Status))
-            return BadRequest("Status cannot be empty.");
-        if (request.Status != "Scheduled" && request.Status != "Started" && request.Status != "Completed")
-            return BadRequest("Invalid status. Allowed values are: Scheduled, Started, Completed.");
-        if (request.Status == "Started" && request.ScheduledAt < DateTime.UtcNow)
-            return BadRequest("Job cannot be started before the scheduled date.");
-        if (request.Status == "Completed" && request.ScheduledAt > DateTime.UtcNow)
-            return BadRequest("Job cannot be completed before the scheduled date.");
-        if (request.Status == "Completed" && request.StartedAt == null)
-            return BadRequest("Job must be started before it can be completed.");
-        if (request.Status == "Completed" && request.CompletedAt != null)
-            return BadRequest("Job is already completed.");
-        if (request.Status == "Started" && request.CompletedAt != null)
-            return BadRequest("Job is already completed.");
-        if (request.Status == "Scheduled" && request.StartedAt != null)
-            return BadRequest("Job is already started.");
-        if (request.Status == "Scheduled" && request.CompletedAt != null)
-            return BadRequest("Job is already completed.");
-        if (request.Status == "Started" && request.CompletedAt != null)
-            return BadRequest("Job is already completed.");
-        var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == request.JobId && !j.IsDeleted);
-
+        var job = await _context.Jobs.Include(j => j.Customer).FirstOrDefaultAsync(j => j.Id == request.JobId && !j.IsDeleted);
         if (job == null) return NotFound();
-        if (job.Status == request.Status) return BadRequest("Already in requested status.");
+        if (job.Status == request.Status) return BadRequest("Status is already set.");
 
-        var oldStatus = job.Status;
         job.Status = request.Status;
-
-        if (request.Status == "Started") job.StartedAt = DateTime.UtcNow;
-        if (request.Status == "Completed") job.CompletedAt = DateTime.UtcNow;
+        if (request.Status == "Started") job.StartedAt = request.Timestamp;
+        if (request.Status == "Completed") job.CompletedAt = request.Timestamp;
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-
         _context.JobActivities.Add(new JobActivity
         {
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ActivityType = "StatusChanged",
-            Details = $"From {oldStatus} to {request.Status}",
+            Details = $"Changed to {request.Status}",
             PerformedAt = DateTime.UtcNow,
             PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
         });
@@ -225,10 +186,9 @@ public class JobController : ControllerBase
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> ArchiveJob(Guid jobId)
     {
-        if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
         var job = await _context.Jobs.FindAsync(jobId);
-        if (job == null) return NotFound("Job not found.");
-        if (job.IsDeleted) return BadRequest("Job already archived.");
+        if (job == null) return NotFound();
+        if (job.IsDeleted) return BadRequest("Already archived.");
 
         job.IsDeleted = true;
 
@@ -338,245 +298,69 @@ public class JobController : ControllerBase
         });
     }
 
-    [HttpPost("note")]
-    public async Task<IActionResult> AddNote(CreateJobNoteRequest request)
-    {
-        if (request.JobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        if (string.IsNullOrWhiteSpace(request.Note))
-            return BadRequest("Note cannot be empty.");
-        if (request.Note.Length > 500)
-            return BadRequest("Note cannot exceed 500 characters.");
-        var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == request.JobId && !j.IsDeleted);
-        if (job == null) return NotFound("Job not found.");
-
-        var note = new JobNote
-        {
-            Id = Guid.NewGuid(),
-            JobId = request.JobId,
-            Note = request.Note,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.JobNotes.Add(note);
-
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        _context.JobActivities.Add(new JobActivity
-        {
-            Id = Guid.NewGuid(),
-            JobId = request.JobId,
-            ActivityType = "NoteAdded",
-            Details = $"Note added: {request.Note}",
-            PerformedAt = DateTime.UtcNow,
-            PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
-        });
-        await _context.SaveChangesAsync();
-
-        return Ok(note.Id);
-    }
-
-    [HttpPost("material")]
-    [Authorize(Roles = "Technician")]
-    public async Task<IActionResult> AddMaterial(JobAssignMaterialRequest request)
-    {
-        if (request.JobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        if (request.MaterialId == Guid.Empty) return BadRequest("Material ID cannot be empty.");
-        if (request.QuantityUsed <= 0) return BadRequest("Quantity used must be greater than zero.");
-        if (request.QuantityUsed > 1000) return BadRequest("Quantity used cannot exceed 1000.");
-
-        var job = await _context.Jobs.FindAsync(request.JobId);
-        var material = await _context.Materials.FindAsync(request.MaterialId);
-
-        if (job == null || material == null)
-            return NotFound("Job or Material not found.");
-
-        if (job.IsDeleted)
-            return BadRequest("Job is archived.");
-
-        if (job.Status != "Started" && job.Status != "Completed")
-            return BadRequest("Job must be in 'Started' or 'Completed' status to assign materials.");
-        if (material.StockQuantity <= 0)
-            return BadRequest("Material is out of stock.");
-        if (request.QuantityUsed <= 0)
-            return BadRequest("Quantity used must be greater than zero.");
-        if (request.QuantityUsed > material.StockQuantity)
-            return BadRequest("Quantity used exceeds available stock.");
-
-        if (material.StockQuantity < request.QuantityUsed)
-            return BadRequest("Not enough stock available.");
-
-        var jobMaterial = new JobMaterial
-        {
-            Id = Guid.NewGuid(),
-            JobId = job.Id,
-            MaterialId = material.Id,
-            QuantityUsed = request.QuantityUsed
-        };
-
-        material.StockQuantity -= request.QuantityUsed;
-
-        _context.JobMaterials.Add(jobMaterial);
-
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        _context.JobActivities.Add(new JobActivity
-        {
-            Id = Guid.NewGuid(),
-            JobId = job.Id,
-            ActivityType = "MaterialAssigned",
-            Details = $"Material {material.Name} assigned with quantity {request.QuantityUsed}",
-            PerformedAt = DateTime.UtcNow,
-            PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
-        });
+    // [HttpPost("{jobId}/photo-localserver-upload")]
+    // [Authorize]
+    // [RequestSizeLimit(100 * 1024 * 1024)]
+    // [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
+    // public async Task<IActionResult> UploadToLocalServerPhoto([FromRoute] Guid jobId, IFormFile file)
+    // {
+    //     if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
+    //     if (file == null) return BadRequest("File cannot be null");
+    //     if (file.Length > 100 * 1024 * 1024) return BadRequest("File size exceeds the limit of 100 MB.");
+    //     if (file.Length < 1) return BadRequest("File is empty");
 
 
-        await _context.SaveChangesAsync();
+    //     var job = await _context.Jobs.FindAsync(jobId);
+    //     if (job == null) return NotFound("Job not found");
 
-        return Ok();
-    }
+    //     var photoUrl = await _fileStorageService.UploadFileAsync(file, "job-photos");
 
-    [HttpPost("{jobId}/photo-upload")]
-    [Authorize]
-    [RequestSizeLimit(100 * 1024 * 1024)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
-    public async Task<IActionResult> UploadPhoto([FromRoute] Guid jobId, IFormFile file)
-    {
-        if (jobId == Guid.Empty)
-            return BadRequest("Job ID cannot be empty.");
+    //     var photo = new JobPhoto
+    //     {
+    //         Id = Guid.NewGuid(),
+    //         JobId = jobId,
+    //         PhotoUrl = photoUrl,
+    //         UploadedAt = DateTime.UtcNow
+    //     };
 
-        if (file == null || file.Length == 0)
-            return BadRequest("Uploaded file is empty or missing.");
+    //     _context.JobPhotos.Add(photo);
 
-        if (file.Length > 100 * 1024 * 1024)
-            return BadRequest("File size exceeds the 100 MB limit.");
+    //     var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-        var job = await _context.Jobs.FindAsync(jobId);
-        if (job == null || job.IsDeleted)
-            return NotFound("Job not found or has been archived.");
+    //     _context.JobActivities.Add(new JobActivity
+    //     {
+    //         Id = Guid.NewGuid(),
+    //         JobId = job.Id,
+    //         ActivityType = "PhotoUploaded",
+    //         Details = $"Photo uploaded by {User!.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value}",
+    //         PerformedAt = DateTime.UtcNow,
+    //         PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
+    //     });
 
-        // 🔁 Upload to Firebase under "jobs/{jobId}"
-        var filePath = $"jobs/{jobId}/{Guid.NewGuid()}_{file.FileName}";
-        var photoUrl = await _firebaseStorageService.UploadFileAsync(file, filePath);
+    //     await _context.SaveChangesAsync();
 
-        var photo = new JobPhoto
-        {
-            Id = Guid.NewGuid(),
-            JobId = jobId,
-            PhotoUrl = photoUrl,
-            UploadedAt = DateTime.UtcNow
-        };
+    //     return Ok(new { photo.PhotoUrl });
+    // }
 
-        _context.JobPhotos.Add(photo);
+    // private async Task<string> SavePhotoToServer(IFormFile file)
+    // {
+    //     var uploadsFolder = Path.Combine("wwwroot", "photoUpload");
+    //     Directory.CreateDirectory(uploadsFolder);
 
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    //     var uniqueFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
+    //     var fullPath = Path.Combine(uploadsFolder, uniqueFileName);
 
-        _context.JobActivities.Add(new JobActivity
-        {
-            Id = Guid.NewGuid(),
-            JobId = job.Id,
-            ActivityType = "PhotoUploaded",
-            Details = $"Photo uploaded by {User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value}",
-            PerformedAt = DateTime.UtcNow,
-            PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
-        });
+    //     await using var stream = new FileStream(fullPath, FileMode.Create);
+    //     await file.CopyToAsync(stream);
 
-        await _context.SaveChangesAsync();
-
-        return Ok(new { photo.PhotoUrl });
-    }
+    //     return $"/photoUpload/{uniqueFileName}";
+    // }
 
 
-    [HttpPost("{jobId}/photo-localserver-upload")]
-    [Authorize]
-    [RequestSizeLimit(100 * 1024 * 1024)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
-    public async Task<IActionResult> UploadToLocalServerPhoto([FromRoute] Guid jobId, IFormFile file)
-    {
-        if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        if (file == null) return BadRequest("File cannot be null");
-        if (file.Length > 100 * 1024 * 1024) return BadRequest("File size exceeds the limit of 100 MB.");
-        if (file.Length < 1) return BadRequest("File is empty");
-
-
-        var job = await _context.Jobs.FindAsync(jobId);
-        if (job == null) return NotFound("Job not found");
-
-        var photoUrl = await _fileStorageService.UploadFileAsync(file, "job-photos");
-
-        var photo = new JobPhoto
-        {
-            Id = Guid.NewGuid(),
-            JobId = jobId,
-            PhotoUrl = photoUrl,
-            UploadedAt = DateTime.UtcNow
-        };
-
-        _context.JobPhotos.Add(photo);
-
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-
-        _context.JobActivities.Add(new JobActivity
-        {
-            Id = Guid.NewGuid(),
-            JobId = job.Id,
-            ActivityType = "PhotoUploaded",
-            Details = $"Photo uploaded by {User!.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value}",
-            PerformedAt = DateTime.UtcNow,
-            PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
-        });
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new { photo.PhotoUrl });
-    }
-
-    private async Task<string> SavePhotoToServer(IFormFile file)
-    {
-        var uploadsFolder = Path.Combine("wwwroot", "photoUpload");
-        Directory.CreateDirectory(uploadsFolder);
-
-        var uniqueFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
-        var fullPath = Path.Combine(uploadsFolder, uniqueFileName);
-
-        await using var stream = new FileStream(fullPath, FileMode.Create);
-        await file.CopyToAsync(stream);
-
-        return $"/photoUpload/{uniqueFileName}";
-    }
-
-    [HttpGet("{jobId}/activity")]
-    public async Task<IActionResult> GetActivity(Guid jobId)
-    {
-        if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == jobId && !j.IsDeleted);
-        if (job == null) return NotFound("Job not found.");
-        if (job.IsDeleted) return BadRequest("Job is archived.");
-
-
-        var activities = await _context.JobActivities
-            .Where(a => a.JobId == jobId)
-            .OrderByDescending(a => a.PerformedAt)
-            .Select(a => new JobActivityResponse
-            {
-                Id = a.Id,
-                ActivityType = a.ActivityType,
-                Details = a.Details,
-                PerformedBy = a.PerformedByUser.FullName,
-                PerformedAt = a.PerformedAt
-            }).ToListAsync();
-
-        return Ok(activities);
-    }
 
     [HttpGet("admin")]
     [Authorize(Roles = "Owner,Dispatcher")]
-    public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<JobResponse>>> GetAllJobs(
+    public async Task<ActionResult<TakeServus.Application.DTOs.Common.PagedResult<JobResponse>>> SearchJobs(
        [FromQuery] string? status,
        [FromQuery] string? technicianName,
        [FromQuery] string? customerName,
@@ -640,17 +424,47 @@ public class JobController : ControllerBase
         });
     }
 
+    #region "Job related endpoints, activities, notes, materials, photos"
+
+    [HttpGet("{jobId}/activities")]
+    [Authorize]
+    // This endpoint retrieves the activities related to a specific job
+    // It returns a list of activities including the type, details, performed by, and performed at
+    public async Task<IActionResult> GetActivities(Guid jobId)
+    {
+        (bool flowControl, IActionResult value) = await CheckJob(jobId);
+        if (!flowControl)
+        {
+            return value;
+        }
+
+        var activities = await _context.JobActivities
+            .Where(a => a.JobId == jobId)
+            .OrderByDescending(a => a.PerformedAt)
+            .Select(a => new JobActivityResponse
+            {
+                Id = a.Id,
+                ActivityType = a.ActivityType,
+                Details = a.Details,
+                PerformedBy = a.PerformedByUser.FullName,
+                PerformedAt = a.PerformedAt
+            }).ToListAsync();
+
+        return Ok(activities);
+    }
+
     [HttpGet("{jobId}/notes")]
+    [Authorize]
+    // This endpoint retrieves the notes related to a specific job
+    // It returns a list of notes including the note content and created at timestamp
+    // It also includes the user who created the note
     public async Task<IActionResult> GetJobNotes(Guid jobId)
     {
-        if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == jobId && !j.IsDeleted);
-        if (job == null) return NotFound("Job not found.");
-        if (job.IsDeleted) return BadRequest("Job is archived.");
+        (bool flowControl, IActionResult value) = await CheckJob(jobId);
+        if (!flowControl)
+        {
+            return value;
+        }
 
         var notes = await _context.JobNotes
             .Where(n => n.JobId == jobId)
@@ -659,16 +473,27 @@ public class JobController : ControllerBase
             {
                 n.Id,
                 n.Note,
-                n.CreatedAt
+                CreatedAt = n.CreatedAt.ToString("dd-MM-yyyy HH:mm:ss"),
+                CreatedBy = n.CreatedByUser.FullName
             })
             .ToListAsync();
 
         return Ok(new { items = notes });
     }
 
-    [HttpGet("{jobId}/material")]
+    [HttpGet("{jobId}/materials")]
+    [Authorize]
+    // This endpoint retrieves the materials related to a specific job
+    // It returns a list of materials including the name, quantity used, unit, unit price, and total cost
+    // It also includes the object ID of the JobMaterial
     public async Task<IActionResult> GetJobMaterials(Guid jobId)
     {
+        (bool flowControl, IActionResult value) = await CheckJob(jobId);
+        if (!flowControl)
+        {
+            return value;
+        }
+
         var materials = await _context.JobMaterials
             .Where(m => m.JobId == jobId)
             .Include(m => m.Material)
@@ -676,7 +501,10 @@ public class JobController : ControllerBase
             {
                 m.Id,
                 m.Material.Name,
-                m.QuantityUsed
+                m.QuantityUsed,
+                m.Material.Unit,
+                m.UnitPrice,
+                Total = m.QuantityUsed * m.UnitPrice
             })
             .ToListAsync();
 
@@ -684,16 +512,14 @@ public class JobController : ControllerBase
     }
 
     [HttpGet("{jobId}/photos")]
+    [Authorize]
     public async Task<IActionResult> GetJobPhotos(Guid jobId)
     {
-        if (jobId == Guid.Empty) return BadRequest("Job ID cannot be empty.");
-        var job = await _context.Jobs
-            .Include(j => j.Technician)
-            .ThenInclude(t => t.User)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == jobId && !j.IsDeleted);
-        if (job == null) return NotFound("Job not found.");
-        if (job.IsDeleted) return BadRequest("Job is archived.");
+        (bool flowControl, IActionResult value) = await CheckJob(jobId);
+        if (!flowControl)
+        {
+            return value;
+        }
 
         var photos = await _context.JobPhotos
             .Where(p => p.JobId == jobId)
@@ -707,5 +533,171 @@ public class JobController : ControllerBase
             .ToListAsync();
 
         return Ok(new { items = photos });
+    }
+
+    [Authorize]
+    [HttpPost("{jobId}/photo-upload")]
+    [RequestSizeLimit(100 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
+    public async Task<IActionResult> UploadPhoto([FromRoute] Guid jobId, IFormFile file)
+    {
+        (bool flowControl, IActionResult value) = await CheckJob(jobId);
+        if (!flowControl)
+        {
+            return value;
+        }
+
+        if (file == null || file.Length == 0)
+            return BadRequest("Uploaded file is empty or missing.");
+
+        if (file.Length > 100 * 1024 * 1024)
+            return BadRequest("File size exceeds the 100 MB limit.");
+
+
+        // 🔁 Upload to Firebase under "jobs/{jobId}"
+        var filePath = $"jobs/{jobId}/{Guid.NewGuid()}_{file.FileName}";
+        var photoUrl = await _firebaseStorageService.UploadFileAsync(file, filePath);
+
+        var photo = new JobPhoto
+        {
+            Id = Guid.NewGuid(),
+            JobId = jobId,
+            PhotoUrl = photoUrl,
+            UploadedAt = DateTime.UtcNow
+        };
+
+        _context.JobPhotos.Add(photo);
+
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        _context.JobActivities.Add(new JobActivity
+        {
+            Id = Guid.NewGuid(),
+            JobId = jobId,
+            ActivityType = "PhotoUploaded",
+            Details = $"Photo uploaded by {User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value}",
+            PerformedAt = DateTime.UtcNow,
+            PerformedByUserId = userId != null ? Guid.Parse(userId) : Guid.Empty
+        });
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { photo.PhotoUrl });
+    }
+    #endregion
+
+    #region "Private Methods"
+    // This method checks if the job exists and is not deleted
+    // It returns a tuple with a boolean indicating if the flow should continue
+    // and an IActionResult to return if the job is not found or is deleted
+    private async Task<(bool flowControl, IActionResult value)> CheckJob(Guid jobId)
+    {
+        if (jobId == Guid.Empty) return (false, BadRequest("Job ID cannot be empty."));
+
+        var job = await _context.Jobs
+            .Include(j => j.Technician).ThenInclude(t => t.User)
+            .Include(j => j.Customer)
+            .FirstOrDefaultAsync(j => j.Id == jobId && !j.IsDeleted);
+
+        return job == null ? (false, NotFound("Job not found.")) : (true, Ok());
+    }
+    #endregion
+
+    [AllowAnonymous]
+    [HttpPost("public/guest")]
+    public async Task<IActionResult> CreateGuestJob([FromBody] GuestCustomerRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            return BadRequest("Full name is required.");
+
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber) && string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest("At least one contact info (email or phone) is required.");
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest("Job title is required.");
+
+        if (request.ScheduledAt < DateTime.UtcNow)
+            return BadRequest("Scheduled date cannot be in the past.");
+
+        if (request.ScheduledAt > DateTime.UtcNow.AddDays(30))
+            return BadRequest("Scheduled date cannot be more than 30 days in the future.");
+
+        var customer = new Customer
+        {
+            Id = Guid.NewGuid(),
+            FullName = request.FullName,
+            PhoneNumber = request.PhoneNumber,
+            Email = request.Email,
+            Address = "Not Provided",
+            Latitude = request.Latitude,
+            Longitude = request.Longitude
+        };
+
+        var job = new Job
+        {
+            Id = Guid.NewGuid(),
+            CustomerId = customer.Id,
+            Title = request.Title,
+            Description = request.Description,
+            ScheduledAt = request.ScheduledAt,
+            Status = "Scheduled",
+            IsAssigned = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Customers.Add(customer);
+        _context.Jobs.Add(job);
+        await _context.SaveChangesAsync();
+
+        // Optional logging
+        Console.WriteLine($"[GUEST] Job created: {job.Title} for {customer.FullName}");
+
+        // TODO: Queue email notification to dispatcher/manager
+        // await _queuedEmailService.EnqueueEmailAsync("dispatcher@example.com", "New Guest Job Request", $"New guest job created: {job.Title}");
+
+        return Ok(new { JobId = job.Id });
+    }
+
+    [Authorize]
+    [HttpPost("public/registered")]
+    public async Task<IActionResult> CreateRegisteredJob([FromBody] RegisteredJobRequest request)
+    {
+        if (request.CustomerId == Guid.Empty)
+            return BadRequest("CustomerId is required.");
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest("Job title is required.");
+
+        if (request.ScheduledAt < DateTime.UtcNow)
+            return BadRequest("Scheduled date cannot be in the past.");
+
+        if (request.ScheduledAt > DateTime.UtcNow.AddDays(30))
+            return BadRequest("Scheduled date cannot be more than 30 days in the future.");
+
+        var customer = await _context.Customers.FindAsync(request.CustomerId);
+        if (customer == null || customer.IsDeleted)
+            return NotFound("Customer not found.");
+
+        var job = new Job
+        {
+            Id = Guid.NewGuid(),
+            CustomerId = customer.Id,
+            Title = request.Title,
+            Description = request.Description,
+            ScheduledAt = request.ScheduledAt,
+            Status = "Scheduled",
+            IsAssigned = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Jobs.Add(job);
+        await _context.SaveChangesAsync();
+
+        Console.WriteLine($"[REGISTERED] Job created: {job.Title} for {customer.FullName}");
+
+        // TODO: Send email to dispatcher
+        // await _queuedEmailService.EnqueueEmailAsync("dispatcher@example.com", "New Registered Job", $"New job created: {job.Title} for {customer.FullName}");
+
+        return Ok(new { JobId = job.Id });
     }
 }

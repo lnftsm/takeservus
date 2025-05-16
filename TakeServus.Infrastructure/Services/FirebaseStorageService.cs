@@ -1,16 +1,15 @@
 using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
-using Google.Apis.Auth.OAuth2.Responses;
 using Google.Cloud.Storage.V1;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TakeServus.Application.Interfaces;
-using TakeServus.Application.Settings;
+using TakeServus.Shared.Settings;
 
 namespace TakeServus.Infrastructure.Services;
 
-public class FirebaseStorageService : IFileStorageService
+public class FirebaseStorageService : IFirebaseStorageService
 {
   private readonly ILogger<FirebaseStorageService> _logger;
   private readonly StorageClient _storageClient;
@@ -20,15 +19,15 @@ public class FirebaseStorageService : IFileStorageService
   {
     _logger = logger;
 
-    var credentialPath = firebaseOptions.Value.CredentialPath;
+    var settings = firebaseOptions.Value;
 
-    if (string.IsNullOrWhiteSpace(credentialPath))
-      throw new ArgumentException("Firebase credential path is missing in configuration.", nameof(credentialPath));
+    if (string.IsNullOrWhiteSpace(settings.CredentialPath))
+      throw new ArgumentException("Firebase credential path is missing in configuration.");
 
-    if (!File.Exists(credentialPath))
-      throw new FileNotFoundException($"Firebase credential file not found at: {credentialPath}");
+    if (!File.Exists(settings.CredentialPath))
+      throw new FileNotFoundException($"Firebase credential file not found at: {settings.CredentialPath}");
 
-    var googleCredential = GoogleCredential.FromFile(credentialPath);
+    var googleCredential = GoogleCredential.FromFile(settings.CredentialPath);
 
     if (FirebaseApp.DefaultInstance == null)
     {
@@ -38,20 +37,28 @@ public class FirebaseStorageService : IFileStorageService
       });
     }
 
-    // ✅ Pass credentials explicitly to avoid ADC error
     _storageClient = StorageClient.Create(googleCredential);
 
-    var cred = googleCredential.UnderlyingCredential as ServiceAccountCredential;
-    if (cred == null)
-      throw new InvalidOperationException("Failed to extract ServiceAccountCredential from Firebase credentials.");
+    if (!string.IsNullOrWhiteSpace(settings.Bucket))
+    {
+      _bucketName = settings.Bucket;
+    }
+    else
+    {
+      var cred = googleCredential.UnderlyingCredential as ServiceAccountCredential;
+      if (cred == null)
+        throw new InvalidOperationException("Cannot extract project ID from service account.");
 
-    _bucketName = $"{cred.ProjectId}.appspot.com";
+      _bucketName = $"{cred.ProjectId}.appspot.com";
+    }
+
+    _logger.LogInformation("Firebase bucket configured: {Bucket}", _bucketName);
   }
 
   public async Task<string> UploadFileAsync(IFormFile file, string folder)
   {
     var objectName = $"{folder}/{Guid.NewGuid()}_{file.FileName}";
-    using var stream = file.OpenReadStream();
+    await using var stream = file.OpenReadStream();
 
     var dataObject = await _storageClient.UploadObjectAsync(
         _bucketName,
@@ -63,5 +70,36 @@ public class FirebaseStorageService : IFileStorageService
     _logger.LogInformation("Uploaded file '{File}' to Firebase bucket '{Bucket}'.", objectName, _bucketName);
 
     return $"https://firebasestorage.googleapis.com/v0/b/{_bucketName}/o/{Uri.EscapeDataString(objectName)}?alt=media";
+  }
+
+  public async Task<bool> DeleteFile(string photoUrl)
+  {
+    try
+    {
+      if (string.IsNullOrWhiteSpace(photoUrl))
+        throw new ArgumentException("Photo URL cannot be empty.");
+
+      // Extract object path from full URL
+      var prefix = $"https://firebasestorage.googleapis.com/v0/b/{_bucketName}/";
+      if (!photoUrl.StartsWith(prefix))
+        throw new ArgumentException("Invalid Firebase URL format.");
+
+      var objectName = photoUrl.Substring(prefix.Length);
+
+      await _storageClient.DeleteObjectAsync(_bucketName, objectName);
+      _logger.LogInformation("Deleted file from Firebase: {Object}", objectName);
+
+      return true;
+    }
+    catch (Google.GoogleApiException ex) when (ex.Error.Code == 404)
+    {
+      _logger.LogWarning("File not found in Firebase Storage.");
+      return false;
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error deleting file from Firebase.");
+      return false;
+    }
   }
 }

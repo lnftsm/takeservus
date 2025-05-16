@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Options;
 using TakeServus.Application.Interfaces;
-using TakeServus.Application.Settings;
+using TakeServus.Shared.Settings;
 
 public class EmailService : IEmailService
 {

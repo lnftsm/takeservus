@@ -1,9 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using TakeServus.Application.Interfaces;
-using TakeServus.Application.Settings;
 using TakeServus.Infrastructure.Services;
+using TakeServus.Shared.Settings;
 
 namespace TakeServus.Infrastructure.Extensions
 {
@@ -18,11 +17,11 @@ namespace TakeServus.Infrastructure.Extensions
 
       if (fileStorageSettings?.UseFirebase == true)
       {
-        services.AddSingleton<IFileStorageService, FirebaseStorageService>();
+        services.AddSingleton<IFirebaseStorageService, FirebaseStorageService>();
       }
       else
       {
-        services.AddSingleton<IFileStorageService, LocalStorageService>();
+        services.AddSingleton<IFileStorageService, FileStorageService>();
       }
 
       return services;
