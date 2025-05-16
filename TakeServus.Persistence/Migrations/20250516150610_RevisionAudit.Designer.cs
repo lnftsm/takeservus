@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TakeServus.Persistence.DbContexts;
@@ -11,9 +12,11 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Persistence.Migrations
 {
     [DbContext(typeof(TakeServusDbContext))]
-    partial class TakeServusDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250516150610_RevisionAudit")]
+    partial class RevisionAudit
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -80,7 +83,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Customers", (string)null);
+                    b.ToTable("Customers");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Invoice", b =>
@@ -106,7 +109,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("JobId")
                         .IsUnique();
 
-                    b.ToTable("Invoices", (string)null);
+                    b.ToTable("Invoices");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Job", b =>
@@ -177,7 +180,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("TechnicianId");
 
-                    b.ToTable("Jobs", (string)null);
+                    b.ToTable("Jobs");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobActivity", b =>
@@ -234,7 +237,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("JobId", "PerformedAt");
 
-                    b.ToTable("JobActivities", (string)null);
+                    b.ToTable("JobActivities");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobFeedback", b =>
@@ -298,7 +301,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("JobId", "CustomerId")
                         .IsUnique();
 
-                    b.ToTable("JobFeedbacks", (string)null);
+                    b.ToTable("JobFeedbacks");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobMaterial", b =>
@@ -349,7 +352,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("MaterialId");
 
-                    b.ToTable("JobMaterials", (string)null);
+                    b.ToTable("JobMaterials");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobNote", b =>
@@ -395,7 +398,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("JobId");
 
-                    b.ToTable("JobNotes", (string)null);
+                    b.ToTable("JobNotes");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobPhoto", b =>
@@ -442,7 +445,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("JobId");
 
-                    b.ToTable("JobPhotos", (string)null);
+                    b.ToTable("JobPhotos");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Material", b =>
@@ -494,7 +497,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Materials", (string)null);
+                    b.ToTable("Materials");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.QueuedEmail", b =>
@@ -533,7 +536,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("QueuedEmails", (string)null);
+                    b.ToTable("QueuedEmails");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Technician", b =>
@@ -587,7 +590,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Technicians", (string)null);
+                    b.ToTable("Technicians");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.User", b =>
@@ -648,7 +651,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Invoice", b =>

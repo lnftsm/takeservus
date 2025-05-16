@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TakeServus.Persistence.DbContexts;
@@ -11,9 +12,11 @@ using TakeServus.Persistence.DbContexts;
 namespace TakeServus.Persistence.Migrations
 {
     [DbContext(typeof(TakeServusDbContext))]
-    partial class TakeServusDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250514112532_AuditAndDomain")]
+    partial class AuditAndDomain
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -35,9 +38,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
@@ -52,10 +52,14 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("character varying(150)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<decimal?>("Latitude")
                         .HasPrecision(9, 6)
@@ -65,11 +69,8 @@ namespace TakeServus.Persistence.Migrations
                         .HasPrecision(9, 6)
                         .HasColumnType("numeric(9,6)");
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -78,9 +79,12 @@ namespace TakeServus.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.ToTable("Customers", (string)null);
+                    b.ToTable("Customers");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Invoice", b =>
@@ -106,7 +110,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("JobId")
                         .IsUnique();
 
-                    b.ToTable("Invoices", (string)null);
+                    b.ToTable("Invoices");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Job", b =>
@@ -121,9 +125,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
@@ -135,19 +136,17 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("character varying(1000)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsAssigned")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -171,13 +170,16 @@ namespace TakeServus.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("TechnicianId");
 
-                    b.ToTable("Jobs", (string)null);
+                    b.ToTable("Jobs");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobActivity", b =>
@@ -194,9 +196,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
@@ -205,19 +204,20 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("character varying(2000)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -228,13 +228,16 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<Guid>("PerformedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PerformedByUserId");
 
                     b.HasIndex("JobId", "PerformedAt");
 
-                    b.ToTable("JobActivities", (string)null);
+                    b.ToTable("JobActivities");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobFeedback", b =>
@@ -250,9 +253,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
@@ -260,10 +260,14 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsSatisfied")
                         .HasColumnType("boolean");
@@ -271,14 +275,8 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<Guid>("JobId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("JobId1")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -289,16 +287,17 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CustomerId");
 
-                    b.HasIndex("JobId1");
-
                     b.HasIndex("JobId", "CustomerId")
                         .IsUnique();
 
-                    b.ToTable("JobFeedbacks", (string)null);
+                    b.ToTable("JobFeedbacks");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobMaterial", b =>
@@ -310,17 +309,18 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("uuid");
@@ -328,11 +328,8 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<Guid>("MaterialId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -343,13 +340,16 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("JobId");
 
                     b.HasIndex("MaterialId");
 
-                    b.ToTable("JobMaterials", (string)null);
+                    b.ToTable("JobMaterials");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobNote", b =>
@@ -361,26 +361,24 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -389,13 +387,16 @@ namespace TakeServus.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("JobId");
 
-                    b.ToTable("JobNotes", (string)null);
+                    b.ToTable("JobNotes");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobPhoto", b =>
@@ -407,26 +408,24 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -435,6 +434,9 @@ namespace TakeServus.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("UploadedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -442,7 +444,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasIndex("JobId");
 
-                    b.ToTable("JobPhotos", (string)null);
+                    b.ToTable("JobPhotos");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Material", b =>
@@ -454,23 +456,21 @@ namespace TakeServus.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -492,9 +492,12 @@ namespace TakeServus.Persistence.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.ToTable("Materials", (string)null);
+                    b.ToTable("Materials");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.QueuedEmail", b =>
@@ -533,7 +536,7 @@ namespace TakeServus.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("QueuedEmails", (string)null);
+                    b.ToTable("QueuedEmails");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Technician", b =>
@@ -544,9 +547,6 @@ namespace TakeServus.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
@@ -560,7 +560,9 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("numeric(9,6)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsAvailable")
                         .ValueGeneratedOnAdd()
@@ -568,16 +570,18 @@ namespace TakeServus.Persistence.Migrations
                         .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -587,7 +591,7 @@ namespace TakeServus.Persistence.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Technicians", (string)null);
+                    b.ToTable("Technicians");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.User", b =>
@@ -598,9 +602,6 @@ namespace TakeServus.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
@@ -616,16 +617,17 @@ namespace TakeServus.Persistence.Migrations
                         .HasColumnType("character varying(150)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
-                    b.Property<DateTime?>("ModifiedAt")
+                    b.Property<DateTime>("ModifiedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModifiedByUserFullName")
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("ModifiedByUserId")
                         .HasColumnType("uuid");
@@ -643,12 +645,15 @@ namespace TakeServus.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Invoice", b =>
@@ -713,10 +718,6 @@ namespace TakeServus.Persistence.Migrations
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("TakeServus.Domain.Entities.Job", null)
-                        .WithMany("JobFeedbacks")
-                        .HasForeignKey("JobId1");
 
                     b.Navigation("Customer");
 
@@ -792,8 +793,6 @@ namespace TakeServus.Persistence.Migrations
                     b.Navigation("Activities");
 
                     b.Navigation("Invoice");
-
-                    b.Navigation("JobFeedbacks");
 
                     b.Navigation("JobMaterials");
 
