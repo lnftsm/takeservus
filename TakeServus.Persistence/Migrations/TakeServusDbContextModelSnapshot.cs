@@ -299,6 +299,7 @@ namespace TakeServus.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("JobFeedbacks", (string)null);
+
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.JobMaterial", b =>
@@ -534,6 +535,45 @@ namespace TakeServus.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("QueuedEmails", (string)null);
+                });
+
+            modelBuilder.Entity("TakeServus.Domain.Entities.QueuedEmail", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsSent")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("RetryCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("To")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("QueuedEmails");
                 });
 
             modelBuilder.Entity("TakeServus.Domain.Entities.Technician", b =>

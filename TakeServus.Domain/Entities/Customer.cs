@@ -1,8 +1,8 @@
-namespace TakeServus.Domain.Entities;
+using TakeServus.Domain.Common;
 
-public class Customer
+namespace TakeServus.Domain.Entities;
+public class Customer : BaseEntityWithAudit
 {
-    public Guid Id { get; set; }
     public string FullName { get; set; } = default!;
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }

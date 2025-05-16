@@ -18,31 +18,30 @@ public class DashboardController : ControllerBase
         _context = context;
     }
 
-    [HttpGet("summary")]
-    public async Task<ActionResult<DashboardSummaryResponse>> GetSummary()
+    [HttpGet("dashboard-summary")]
+    public async Task<ActionResult<DashboardSummaryResponse>> GetDashboardSummary()
     {
-        var jobs = _context.Jobs.AsQueryable();
-        var users = _context.Users.AsQueryable();
-        var technicians = _context.Technicians.AsQueryable();
-        var materials = _context.Materials.AsQueryable();
-        var customers = _context.Customers.AsQueryable();
+        var jobs = _context.Jobs.Where(j => !j.IsDeleted);
+        var users = _context.Users.Where(u => u.IsActive);
+        var technicians = _context.Technicians;
+        var materials = _context.Materials;
+        var customers = _context.Customers.Where(c => !c.IsDeleted);
 
         var result = new DashboardSummaryResponse
         {
             TotalJobs = await jobs.CountAsync(),
             ScheduledJobs = await jobs.CountAsync(j => j.Status == "Scheduled"),
-            EnRouteJobs = await jobs.CountAsync(j => j.Status == "EnRoute"),
             StartedJobs = await jobs.CountAsync(j => j.Status == "Started"),
             CompletedJobs = await jobs.CountAsync(j => j.Status == "Completed"),
 
-            ActiveTechnicians = await users.CountAsync(u => u.Role == "Technician" && u.IsActive),
+            ActiveTechnicians = await users.CountAsync(u => u.Role == "Technician"),
             TotalCustomers = await customers.CountAsync(),
 
             LowStockMaterials = await materials
                 .Where(m => m.StockQuantity < 10)
-                .Select(m => new LowStockMaterialDto
+                .Select(m => new LowStockMaterialResponse
                 {
-                    Name = m.Name,
+                    MaterialName = m.Name,
                     StockQuantity = m.StockQuantity
                 }).ToListAsync()
         };
@@ -54,6 +53,7 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetJobSummary()
     {
         var result = await _context.Jobs
+            .Where(j => !j.IsDeleted)
             .GroupBy(j => j.Status)
             .Select(g => new
             {
@@ -74,7 +74,9 @@ public class DashboardController : ControllerBase
                 Year = g.Key.Year,
                 Month = g.Key.Month,
                 TotalRevenue = g.Sum(i => i.Amount)
-            }).OrderByDescending(r => r.Year).ThenByDescending(r => r.Month)
+            })
+            .OrderByDescending(r => r.Year)
+            .ThenByDescending(r => r.Month)
             .ToListAsync();
 
         return Ok(result);
@@ -84,12 +86,12 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetTechnicianActivity()
     {
         var result = await _context.Jobs
-            .Where(j => j.Status == "Completed")
+            .Where(j => !j.IsDeleted && j.Status == "Completed")
             .GroupBy(j => j.TechnicianId)
             .Select(g => new
             {
                 TechnicianId = g.Key,
-                TechnicianName = g.First().Technician.User.FullName,
+                TechnicianName = g.Select(j => j.Technician.User.FullName).FirstOrDefault() ?? "N/A",
                 JobsCompleted = g.Count()
             }).ToListAsync();
 
@@ -97,23 +99,75 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("job-trends")]
-    public async Task<IActionResult> GetJobTrends([FromQuery] int days = 7)
+    public async Task<ActionResult<IEnumerable<JobTrendResponse>>> GetJobTrends()
     {
-        var fromDate = DateTime.UtcNow.Date.AddDays(-days);
+        var today = DateTime.Today;
+        var startDate = today.AddDays(-6);
 
-        var trendData = await _context.Jobs
-            .Where(j => j.CreatedAt >= fromDate)
-            .GroupBy(j => j.CreatedAt.Date)
-            .Select(g => new JobTrendDto
-            {
-                Date = g.Key,
-                Scheduled = g.Count(j => j.Status == "Scheduled"),
-                Started = g.Count(j => j.Status == "Started"),
-                Completed = g.Count(j => j.Status == "Completed")
-            })
-            .OrderBy(t => t.Date)
+        var jobs = await _context.Jobs
+            .Where(j => !j.IsDeleted &&
+                        j.ScheduledAt.HasValue &&
+                        j.ScheduledAt.Value.Date >= startDate &&
+                        j.ScheduledAt.Value.Date <= today)
             .ToListAsync();
 
-        return Ok(trendData);
+        var trends = Enumerable.Range(0, 7)
+            .Select(i => startDate.AddDays(i))
+            .Select(date => new JobTrendResponse
+            {
+                Date = date,
+                Scheduled = jobs.Count(j => j.ScheduledAt?.Date == date),
+                Started = jobs.Count(j => j.StartedAt?.Date == date),
+                Completed = jobs.Count(j => j.CompletedAt?.Date == date)
+            }).ToList();
+
+        return Ok(trends);
+    }
+
+    [HttpGet("customer-satisfaction")]
+    public async Task<IActionResult> GetCustomerSatisfaction()
+    {
+        var result = await _context.JobFeedbacks
+            .Where(f => f.Rating.HasValue)
+            .GroupBy(f => f.Rating)
+            .Select(g => new
+            {
+                Rating = g.Key,
+                Count = g.Count()
+            })
+            .OrderByDescending(r => r.Rating)
+            .ToListAsync();
+
+        return Ok(result);
+    }
+
+    [HttpGet("technician-performance")]
+    public async Task<IActionResult> GetTechnicianPerformance()
+    {
+        var technicians = await _context.Technicians
+            .Include(t => t.User)
+            .ToListAsync();
+
+        var jobGroups = await _context.Jobs
+            .Where(j => !j.IsDeleted)
+            .Include(j => j.JobFeedbacks)
+            .GroupBy(j => j.TechnicianId)
+            .ToListAsync();
+
+        var result = jobGroups.Select(g =>
+        {
+            var technician = technicians.FirstOrDefault(t => t.Id == g.Key);
+            var feedbacks = g.SelectMany(j => j.JobFeedbacks).Where(f => f.Rating.HasValue).ToList();
+
+            return new
+            {
+                TechnicianId = g.Key,
+                TechnicianName = technician?.User.FullName ?? "N/A",
+                JobsCompleted = g.Count(j => j.Status == "Completed"),
+                AverageRating = feedbacks.Any() ? Math.Round(feedbacks.Average(f => f.Rating!.Value), 2) : 0
+            };
+        }).ToList();
+
+        return Ok(result);
     }
 }

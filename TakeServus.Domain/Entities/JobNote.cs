@@ -1,11 +1,11 @@
-namespace TakeServus.Domain.Entities;
+using TakeServus.Domain.Common;
 
-public class JobNote
+namespace TakeServus.Domain.Entities;
+public class JobNote : BaseEntityWithAudit
 {
-    public Guid Id { get; set; }
     public Guid JobId { get; set; }
     public string Note { get; set; } = default!;
-    public DateTime CreatedAt { get; set; }
 
     public Job Job { get; set; } = default!;
+    public User CreatedByUser { get; set; } = default!;
 }
