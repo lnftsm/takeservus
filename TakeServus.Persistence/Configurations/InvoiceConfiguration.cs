@@ -10,9 +10,10 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
     public void Configure(EntityTypeBuilder<Invoice> builder)
     {
         builder.HasKey(i => i.Id);
+        
         builder.Property(i => i.Amount).HasColumnType("decimal(10,2)").IsRequired();
         builder.Property(i => i.IsPaid).IsRequired();
-        builder.Property(i => i.CreatedAt).IsRequired();
-        builder.HasOne(i => i.Job).WithOne(j => j.Invoice).HasForeignKey<Invoice>(i => i.JobId);
+
+        builder.HasOne(i => i.Job).WithOne(j => j.Invoice).HasForeignKey<Invoice>(i => i.JobId).OnDelete(DeleteBehavior.Cascade); 
     }
 }

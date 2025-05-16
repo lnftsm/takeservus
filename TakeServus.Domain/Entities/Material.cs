@@ -1,9 +1,10 @@
-namespace TakeServus.Domain.Entities;
+using TakeServus.Domain.Common;
 
-public class Material
+namespace TakeServus.Domain.Entities;
+public class Material : BaseEntityWithAudit
 {
-    public Guid Id { get; set; }
     public string Name { get; set; } = default!;
+    public string Unit { get; set; } = default!; // e.g., pcs, liters
     public decimal UnitPrice { get; set; }
     public int StockQuantity { get; set; }
 

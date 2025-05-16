@@ -1,8 +1,9 @@
+using TakeServus.Domain.Common;
+
 namespace TakeServus.Domain.Entities;
 
-public class JobFeedback
+public class JobFeedback : BaseEntityWithAudit
 {
-  public Guid Id { get; set; }
   public Guid JobId { get; set; }
   public Guid CustomerId { get; set; }
 
@@ -12,7 +13,6 @@ public class JobFeedback
 
   public DateTime SubmittedAt { get; set; }
 
-  // Navigation
   public Job Job { get; set; } = default!;
   public Customer Customer { get; set; } = default!;
 }

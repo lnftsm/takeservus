@@ -6,7 +6,7 @@ using TakeServus.Persistence.DbContexts;
 using Xunit;
 using FluentAssertions;
 
-namespace TakeServus.Tests.Tests.Persistence;
+namespace TakeServus.Tests.Tests;
 public class DbContextTests
 {
   private TakeServusDbContext GetDbContext()

@@ -11,5 +11,5 @@ public class DashboardSummaryResponse
     public int ActiveTechnicians { get; set; }
     public int TotalCustomers { get; set; }
 
-    public List<LowStockMaterialDto> LowStockMaterials { get; set; } = new();
+    public List<LowStockMaterialResponse> LowStockMaterials { get; set; } = new();
 }

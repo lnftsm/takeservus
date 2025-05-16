@@ -1,10 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using TakeServus.Application.DTOs.Invoices;
-using TakeServus.Domain.Entities;
-using TakeServus.Infrastructure.Pdf;
-using TakeServus.Persistence.DbContexts;
+using TakeServus.Application.Interfaces;
+using TakeServus.Application.DTOs.Common;
 
 namespace TakeServus.Api.Controllers;
 
@@ -13,130 +11,88 @@ namespace TakeServus.Api.Controllers;
 [Authorize]
 public class InvoiceController : ControllerBase
 {
-    private readonly TakeServusDbContext _context;
+    private readonly IInvoiceService _invoiceService;
 
-    public InvoiceController(TakeServusDbContext context)
+    public InvoiceController(IInvoiceService invoiceService)
     {
-        _context = context;
+        _invoiceService = invoiceService;
     }
 
-    // Dispatcher manually creates invoice
     [HttpPost]
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> CreateInvoice([FromBody] CreateInvoiceRequest request)
     {
-        var job = await _context.Jobs
-            .Include(j => j.Invoice)
-            .Include(j => j.Customer)
-            .FirstOrDefaultAsync(j => j.Id == request.JobId);
-
-        if (job == null)
-            return NotFound("Job not found.");
-
-        if (job.Invoice != null)
-            return BadRequest("Invoice already exists.");
-
-        var total = request.Materials.Sum(m => m.Quantity * m.UnitPrice);
-
-        var invoice = new Invoice
+        try
         {
-            Id = Guid.NewGuid(),
-            JobId = job.Id,
-            Amount = total,
-            CreatedAt = DateTime.UtcNow,
-            IsPaid = false
-        };
-
-        _context.Invoices.Add(invoice);
-        await _context.SaveChangesAsync();
-
-        return Ok(new
+            var invoiceId = await _invoiceService.CreateInvoiceAsync(request);
+            return Ok(new { invoiceId });
+        }
+        catch (Exception ex)
         {
-            invoice.Id,
-            invoice.Amount,
-            invoice.IsPaid,
-            invoice.CreatedAt,
-            Customer = job.Customer.FullName
-        });
+            return BadRequest(ex.Message);
+        }
     }
 
-    // Auto-generate from JobMaterials
     [HttpPost("{jobId}/generate")]
     [Authorize(Roles = "Owner,Dispatcher,Technician")]
     public async Task<ActionResult<GenerateInvoiceResponse>> GenerateInvoice(Guid jobId)
     {
-        var job = await _context.Jobs
-            .Include(j => j.JobMaterials)
-                .ThenInclude(jm => jm.Material)
-            .Include(j => j.Invoice)
-            .FirstOrDefaultAsync(j => j.Id == jobId);
-
-        if (job == null)
-            return NotFound("Job not found.");
-
-        if (job.Invoice != null)
-            return BadRequest("Invoice already exists.");
-
-        var totalAmount = job.JobMaterials.Sum(jm => jm.QuantityUsed * jm.Material.UnitPrice);
-
-        var invoice = new Invoice
+        try
         {
-            Id = Guid.NewGuid(),
-            JobId = jobId,
-            Amount = totalAmount,
-            IsPaid = false,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Invoices.Add(invoice);
-        await _context.SaveChangesAsync();
-
-        return Ok(new GenerateInvoiceResponse
+            var result = await _invoiceService.GenerateInvoiceAsync(jobId);
+            return Ok(result);
+        }
+        catch (Exception ex)
         {
-            InvoiceId = invoice.Id,
-            Amount = invoice.Amount,
-            IsPaid = invoice.IsPaid,
-            CreatedAt = invoice.CreatedAt
-        });
+            return BadRequest(ex.Message);
+        }
     }
 
-    // Mark as paid
     [HttpPut("{invoiceId}/pay")]
     [Authorize(Roles = "Owner,Dispatcher")]
     public async Task<IActionResult> MarkAsPaid(Guid invoiceId)
     {
-        var invoice = await _context.Invoices.FindAsync(invoiceId);
-        if (invoice == null) return NotFound();
-
-        invoice.IsPaid = true;
-        await _context.SaveChangesAsync();
-
-        return Ok();
+        var result = await _invoiceService.MarkAsPaidAsync(invoiceId);
+        return result ? NoContent() : NotFound("Invoice not found.");
     }
 
-    // Download PDF
     [HttpGet("{invoiceId}/pdf")]
     public async Task<IActionResult> GetInvoicePdf(Guid invoiceId)
     {
-        var invoice = await _context.Invoices
-            .Include(i => i.Job)
-                .ThenInclude(j => j.Customer)
-            .Include(i => i.Job)
-                .ThenInclude(j => j.JobMaterials)
-                    .ThenInclude(jm => jm.Material)
-            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+        try
+        {
+            var pdf = await _invoiceService.GeneratePdfAsync(invoiceId);
+            return File(pdf, "application/pdf", $"invoice-{invoiceId}.pdf", enableRangeProcessing: true);
+        }
+        catch (Exception ex)
+        {
+            return NotFound(ex.Message);
+        }
+    }
 
-        if (invoice == null)
-            return NotFound();
+    [HttpGet("list")]
+    [Authorize(Roles = "Owner,Dispatcher")]
+    public async Task<ActionResult<PagedResult<InvoiceResponse>>> GetInvoices(
+        [FromQuery] Guid? customerId,
+        [FromQuery] DateOnly? startDate,
+        [FromQuery] DateOnly? endDate,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool desc = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _invoiceService.GetInvoicesAsync(
+            customerId, startDate, endDate,
+            sortBy, desc, page, pageSize,
+            cancellationToken);
 
-        var materialList = invoice.Job.JobMaterials
-            .Select(jm => (jm.Material.Name, jm.QuantityUsed, jm.Material.UnitPrice))
-            .ToList();
-
-        var customerName = invoice.Job.Customer.FullName;
-
-        var pdf = InvoicePdfGenerator.Generate(invoice, customerName, materialList);
-
-        return File(pdf, "application/pdf", $"invoice-{invoice.Id}.pdf");
+        return Ok(new PagedResult<InvoiceResponse>
+        {
+            Items = list,
+            TotalCount = list.Count,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 }
